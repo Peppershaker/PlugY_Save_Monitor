@@ -1,14 +1,12 @@
+import os
+
 from datetime import datetime
 from time import sleep
-import os
 from shutil import copy2
-
-class FileCorruptError(Exception):
-    pass
 
 
 def any_file_is_corrupt(save_directory, save_files):
-    """Check for file corruption
+    """Check for game character save file corruption
     
     Args:
         save_directory: str
@@ -24,12 +22,24 @@ def any_file_is_corrupt(save_directory, save_files):
             backed up or restored together.
     """
 
-    for save_file in save_files:
+    # Only check .d2x and .d2s files
+    for save_file in save_files[:2]:
         # If files are less than 2KB, it is corrupt
         if os.path.getsize(os.path.join(save_directory, save_file)) < 2000:
             return True
         
         return False
+
+def save_file(file_full_path, destination_directory_path):
+    """Keep on trying to save a file"""
+    for i in range(10):
+        try:
+            copy2(file_full_path, destination_directory_path)
+            return
+        
+        except PermissionError:
+            # Try again if Permission Error
+            sleep(2.5)    
 
 
 def make_backup(char_backup_path, save_files):
@@ -47,14 +57,11 @@ def make_backup(char_backup_path, save_files):
     if not os.path.exists(char_backup_path):
         os.makedirs(char_backup_path)
 
-    # Check if files are corrupt
-    if any_file_is_corrupt(plugy_save_dir, save_files):
-        raise FileCorruptError("Files are corrupt, not saving")
-
     # Saving
-    for save_file in save_files: 
+    for save_file in save_files[:2]: 
         file_full_path = os.path.join(save_dir, save_file)
-        copy2(file_full_path, char_backup_path)
+        
+        save_file(file_full_path, char_backup_path)
 
 
 def load_backup(char_backup_path, save_files):
@@ -74,7 +81,7 @@ def load_backup(char_backup_path, save_files):
 
     # Restart Diablo 2 to prevent current currupt game state to be saved again
     # Also loads recovered game save states
-    os.system("taskkill /f /im  Game.exe")
+    os.system("taskkill /f /im  Diablo II.exe")
 
 
 def log_msg(msg, log_file_folder):
@@ -93,7 +100,8 @@ if __name__ == '__main__':
     
     plugy_save_dir = os.path.join(char_backup_path, os.pardir)
     
-    save_files = (char_name + '.d2s', char_name + '.d2x')
+    save_suffixse = ['.d2s', '.d2x', '.ma0', '.ma3']
+    save_files = [char_name + suffix for suffix in save_suffixse]
 	
     log_file_folder = 'E:/PlugY_Monitor_Logs'
 

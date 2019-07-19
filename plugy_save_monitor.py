@@ -1,11 +1,25 @@
 import os
+import errno
 
 from datetime import datetime
 from time import sleep
 from shutil import copy2
 
+def log_msg(msg, log_file_folder, print_out=True):
+    """Logs msg to file and optionally prints to stdout"""
 
-def any_file_is_corrupt(save_directory, save_files):
+
+    if not os.path.exists(log_file_folder):
+        os.makedirs(log_file_folder)
+    
+    with open(os.path.join(log_file_folder,'monitor_log.txt'), 'a') as f:
+        f.write(msg + '\n')
+
+        if print_out:
+            print(msg)
+
+
+def any_file_is_corrupt(save_directory, save_files, log=True):
     """Check for game character save file corruption
     
     Args:
@@ -23,14 +37,28 @@ def any_file_is_corrupt(save_directory, save_files):
     """
 
     # Only check .d2x and .d2s files
-    for save_file in save_files[:2]:
-        # If files are less than 2KB, it is corrupt
-        if os.path.getsize(os.path.join(save_directory, save_file)) < 2000:
-            return True
-        
-        return False
 
-def save_file(file_full_path, destination_directory_path):
+    corrupt = False
+    for save_file, req in save_files:
+        # Only checking .d2x and .d3s files
+        if req:
+            # If files are less than 1KB, it is corrupt
+            try:
+                file_sz = os.path.getsize(os.path.join(save_directory, save_file))
+
+            except FileNotFoundError:
+                file_sz = 0
+
+            if file_sz < 2500:
+                corrupt = True
+
+            if log:
+                log_msg(f'{save_file} size is {file_sz} bytes', log_file_folder, print_out=True)
+
+    return corrupt
+
+
+def copy_single_file(file_full_path, destination_directory_path):
     """Keep on trying to save a file"""
     for i in range(10):
         try:
@@ -40,6 +68,9 @@ def save_file(file_full_path, destination_directory_path):
         except PermissionError:
             # Try again if Permission Error
             sleep(2.5)    
+
+    # Can't copy
+    log_msg(f"Failed to copy {file_full_path}", log_file_folder)
 
 
 def make_backup(char_backup_path, save_files):
@@ -57,12 +88,31 @@ def make_backup(char_backup_path, save_files):
     if not os.path.exists(char_backup_path):
         os.makedirs(char_backup_path)
 
-    # Saving
-    for save_file in save_files[:2]: 
+    # Saving. .d2s and .d2x are required files, others are saved optionally
+    for save_file, req in save_files: 
         file_full_path = os.path.join(save_dir, save_file)
+        if req:
+            copy_single_file(file_full_path, char_backup_path)
         
-        save_file(file_full_path, char_backup_path)
+        else:
+            try:
+                copy_single_file(file_full_path, char_backup_path)
+            
+            except OSError as e:
+                if e.errno != errno.ENOENT:
+                    raise
 
+def remove_single_file(file_full_path):
+    """Removes a single file which may not exist"""
+
+    try:
+        os.remove(file_full_path)
+    
+    except OSError as e: 
+        # errno.ENOENT = no such file or directory
+        if e.errno != errno.ENOENT: 
+            # re-raise exception if a different error occurred
+            raise 
 
 def load_backup(char_backup_path, save_files):
     """Load character backup
@@ -76,34 +126,51 @@ def load_backup(char_backup_path, save_files):
     """
 
     # Paste backup files
-    for save_file in save_files: 
-        copy2(os.path.join(char_backup_path, save_file), plugy_save_dir)
+    for save_file, req in save_files: 
+        # Delete the save file from save directory if exists to ensure consistency
+        # of save states
+        bk_file_full_path = os.path.join(char_backup_path, save_file)
+        plugy_save_dir = os.path.join(char_backup_path, os.pardir)
+        corrupt_file_full_path = os.path.join(plugy_save_dir, save_file)
+        remove_single_file(corrupt_file_full_path)
+
+        # Copy the file
+        if req:
+            copy_single_file(bk_file_full_path, plugy_save_dir)
+        
+        # Copy non required files
+        else:
+            try:
+                copy_single_file(bk_file_full_path, plugy_save_dir)
+
+            except OSError as e:
+                if e.errno != errno.ENOENT:
+                    # re-raise exception if a different error occurred
+                    raise
+
 
     # Restart Diablo 2 to prevent current currupt game state to be saved again
     # Also loads recovered game save states
-    os.system("taskkill /f /im  Diablo II.exe")
+    os.system("taskkill /f /im \"Game.exe\"")
 
-
-def log_msg(msg, log_file_folder):
-    if not os.path.exists(log_file_folder):
-        os.makedirs(log_file_folder)
-	
-    with open(os.path.join(log_file_folder,'monitor_log.txt'), 'a') as f:
-        f.write(msg + '\n')
 
 if __name__ == '__main__':
-    char_name = "Peppershaker"
-
-    save_dir = 'E:/'
     
+    ####### USER SETTING #######
+    char_name = "Peppershaker"
+    save_dir = 'C:/Users/victo/Dropbox (Personal)/D2Save'
+    log_file_folder = 'C:/Users/victo/Dropbox (Personal)/D2Save/PlugY_Monitor_Logs'
+    ####### END USER SETTING #######
+
     char_backup_path = os.path.join(save_dir, char_name + '_bk')
     
     plugy_save_dir = os.path.join(char_backup_path, os.pardir)
     
-    save_suffixse = ['.d2s', '.d2x', '.ma0', '.ma3']
-    save_files = [char_name + suffix for suffix in save_suffixse]
+    save_suffixse = ['.d2s', '.d2x', '.ma0', '.ma1', '.ma2', '.ma3']
+    save_files_required = [True, True, False, False, False, False]
+
+    save_files = [(char_name + suffix, required) for suffix, required in zip(save_suffixse, save_files_required)]
 	
-    log_file_folder = 'E:/PlugY_Monitor_Logs'
 
     while True:
         if any_file_is_corrupt(save_dir, save_files):
@@ -112,7 +179,6 @@ if __name__ == '__main__':
 
             msg = "Successfully recovered at " + datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             log_msg(msg, log_file_folder)
-            print(msg)
         
         else:
             # File not corrupt
@@ -120,7 +186,6 @@ if __name__ == '__main__':
 
             msg = "Successfully backedup at " + datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             log_msg(msg, log_file_folder)
-            print(msg)
 
         # Check again in 5 minutes
         sleep(300)            

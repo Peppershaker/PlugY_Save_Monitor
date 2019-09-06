@@ -13,6 +13,14 @@ Note that for the restore operation to complete, we will need to terminate `Game
 In other words, if you are botting with D2ETAL you will need to run the script /w admin privilege.
 
 ## Quick Start
-Open plugy_save_monitor.py with text monitor and change the save file locations. You can run the script afterwards.
+Open `plugy_save_monitor.py` with text editor and change the save file path. 
+
+You can run the script afterwards with `python -m plugy_save_monitor`.
 
 This script has no external dependencies.
+
+## Author
+Victor Xu
+
+## License
+MIT
